@@ -1,0 +1,14 @@
+__pycache__/
+.agents/
+.claude/
+.claudeignore
+*.py[cod]
+*.log
+runtime_errors.log
+*.backup
+*.backup*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
