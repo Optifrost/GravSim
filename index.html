@@ -2,89 +2,70 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StarDance Orbital Physics Simulator</title>
+    <title>GravSim – Orbital Physics Sandbox</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background: #0f0f23; color: #fff; line-height: 1.6; }
-        .container { max-width: 800px; margin: 0 auto; }
-        h1 { color: #4cc9f0; text-align: center; }
-        .feature { background: #1a1a2e; padding: 20px; margin: 20px 0; border-radius: 8px; border-left: 4px solid #4cc9f0; }
-        .code { background: #000; padding: 15px; border-radius: 5px; font-family: monospace; overflow-x: auto; }
-        .btn { display: inline-block; background: #4cc9f0; color: #0a0a0a; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 10px 5px; }
-        .controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 20px 0; }
-        .control-item { background: #1a1a2e; padding: 10px; border-radius: 5px; text-align: center: 1em; }
-        footer { text-align: center; margin-top: 40px; color: #888; font-size: 0.9em; }
+        body {font-family: Arial, sans-serif; margin:0; padding:0; background:#111; color:#eee;}
+        .container {max-width:960px; margin:40px auto; padding:20px; background:#1a1a1a; border-radius:8px;}
+        h1, h2 {color:#ffcc00;}
+        a {color:#4fc3f7;}
+        code {background:#222; padding:2px 4px; border-radius:4px;}
+        pre {background:#222; padding:10px; overflow:auto; border-radius:4px;}
+        ul {line-height:1.6;}
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🌌 StarDance Orbital Physics Simulator</h1>
-        <p>A desktop-based gravitational simulator featuring realistic stellar textures, black hole physics, and interactive orbital mechanics.</p>
-        
-        <div class="feature">
-            <h2>✨ Key Features</h2>
-            <ul>
-                <li>🌞 Realistic sun texture (replaces plain yellow circle)</li>
-                <li>⚫ Black hole mode with accretion disk (press 'B')</li>
-                <li>🎯 Stable physics - objects consumed by black holes rather than flying off</li>
-                <li>⚡ Velocity limits to prevent numerical explosions</li>
-                <li>🎮 Full 3D camera controls and interactive parameters</li>
-            </ul>
-        </div>
-        
-        <div class="feature">
-            <h2>🚀 How to Run Locally</h2>
-            <p>This is a desktop application - follow these steps to run it on your computer:</p>
-            <div class="code">
-git clone https://github.com/Optifrost/GravSim.git
-cd GravSim
-pip install pygame pymunk
-python main.py
-            </div>
-            <p><em>Requires: Python 3.7+, Pygame, Pymunk</em></p>
-        </div>
-        
-        <div class="feature">
-            <h2>🎮 Controls</h2>
-            <div class="controls">
-                <div class="control-item">Left Click: Add planet</div>
-                <div class="control-item">Right Click: Add photon</div class="control-item">Click Body: Select for modification</div>
-                <div class="control-item">Delete: Remove selected body</div>
-                <div class="control-item">Backspace: Remove latest planet</div>
-                <div class="control-item">Space: Pause/Resume</div>
-                <div class="control-item">Mouse Wheel / I/O: Zoom</div>
-                <div class="control-item">Arrow Keys: Rotate camera</div>
-                <div class="control-item">WASD: Pan camera</div>
-                <div class="control-item">+ / -: Adjust gravity</div>
-                <div class="control-item">M / N: Adjust selected planet mass</div>
-                <div class="control-item">R / F: Adjust selected planet size</div>
-                <div class="control-item">C: Clear scene</div>
-                <div class="control-item">Home: Reset camera view</div>
-                <div class="control-item">B: Toggle black hole mode</div>
-                <div class="control-item">H: Hide/show UI</div>
-            </div>
-        </div>
-        
-        <div class="feature">
-            <h2>🔭 What Makes This Special</h2>
-            <p>Unlike basic gravity simulators, StarDance includes:</p>
-            <ul>
-                <li>Realistic stellar visualization with texture mapping</li>
-                <li>Physically-inspired black hole consumption (not just visual effects)</li>
-                <li>Photon particles that behave like light (massless, speed-limited)</li>
-                <li>Interactive parameter adjustment in real-time</li>
-                <li>3D camera navigation for viewing orbits from any angle</li>
-            </ul>
-        </div>
-        
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="https://github.com/Optifrost/GravSim" class="btn">View Source Code on GitHub</a>
-        </div>
-        
-        <footer>
-            <p>StarDance Orbital Physics Simulator &mdash; Enhanced version with black hole textures and stable physics</p>
-            <p>Built with Pygame & Pymunk • © 2026</p>
-        </footer>
-    </div>
+<div class="container">
+    <h1>GravSim – Orbital Physics Sandbox</h1>
+    <p>An interactive gravity simulator with black holes, photons, and 3‑D camera controls.</p>
+
+    <h2>How to run it locally (step‑by‑step)</h2>
+    <ol>
+        <li><strong>Install Python</strong> – download and install from <a href="https://www.python.org/downloads/">python.org</a> (3.7 or newer).</li>
+        <li><strong>Open a terminal</strong> (Command Prompt, PowerShell, or Bash).</li>
+        <li><strong>Get the code</strong> – run:
+            <pre>git clone https://github.com/Optifrost/GravSim.git
+cd GravSim</pre>
+        </li>
+        <li><strong>Install dependencies</strong> – in the terminal:
+            <pre>pip install pygame pymunk</pre>
+        </li>
+        <li><strong>Start the program</strong> – still in the terminal:
+            <pre>python main.py</pre>
+        </li>
+    </ol>
+
+    <p>The window will appear. Try these quick actions:</p>
+    <ul>
+        <li>Left‑click empty space → spawn a planet</li>
+        <li>Right‑click empty space → spawn a photon</li>
+        <li>Press <kbd>B</kbd> to turn black‑hole mode on/off</li>
+        <li>Scroll mouse wheel or press <kbd>I</kbd>/<kbd>O</kbd> to zoom</li>
+        <li>Press <kbd>Space</kbd> to pause/un‑pause</li>
+    </ul>
+
+    <h2>Controls at a glance</h2>
+    <ul>
+        <li><kbd>Left click</kbd> – add planet</li>
+        <li><kbd>Right click</kbd> – add photon</li>
+        <li><kbd>Click a body</kbd> – select it</li>
+        <li><kbd>Delete</kbd> – delete selected body</li>
+        <li><kbd>Backspace</kbd> – delete last placed planet</li>
+        <li><kbd>Space</kbd> – pause/resume</li>
+        <li><kbd>Mouse wheel</kbd> / <kbd>I</kbd>/<kbd>O</kbd> – zoom</li>
+        <li><kbd>Arrow keys</kbd> – rotate camera</li>
+        <li><kbd>WASD</kbd> – pan camera</li>
+        <li><kbd>+</kbd>/<kbd>-</kbd> – increase/decrease gravity</li>
+        <li><kbd>M</kbd>/<kbd>N</kbd> – increase/decrease selected planet mass</li>
+        <li><kbd>R</kbd>/<kbd>F</kbd> – increase/decrease selected planet size</li>
+        <li><kbd>C</kbd> – clear scene</li>
+        <li><kbd>Home</kbd> – reset camera view</li>
+        <li><kbd>B</kbd> – toggle black‑hole mode</li>
+        <li><kbd>H</kbd> – hide/show UI</li>
+    </ul>
+
+    <p>Enjoy experimenting with orbits!</p>
+    <hr>
+    <p><small>Source code: <a href="https://github.com/Optifrost/GravSim">GitHub</a></small></p>
+</div>
 </body>
 </html>
