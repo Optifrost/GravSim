@@ -1,6 +1,6 @@
 # GravSim
 
-GravSim is an interactive orbital physics sandbox built with Pygame and Pymunk.
+GravSim is an interactive orbital physics sandbox built with Pygame and Pymunk. It is essentially a 3D sandbox to mess around with. AI was used heavily to write code and occasionally troubleshoot, but a lot of bugs were fixed manually.
 
 ## Quick Start (very simple)
 
