@@ -44,11 +44,11 @@ space.add(center_body)
 predictors = {}  # planet_id -> model
 optimizers = {}  # planet_id -> optimizer
 trained_predictors = set()
-
-# Black hole mode state
+# Black hole mode toggle state
 black_hole_mode = False
-_stored_center_mass = CENTER_MASS
-_stored_g_constant = G_CONSTANT
+_stored_center_mass = 0
+_stored_g_constant = 0
+
 
 # Entity lists
 planets = []
@@ -279,7 +279,6 @@ try:
                 elif event.key == pygame.K_p:
                     add_random_photon()
                 elif event.key == pygame.K_b:
-                    global black_hole_mode, _stored_center_mass, _stored_g_constant
                     if not black_hole_mode:
                         # Enter black hole mode
                         _stored_center_mass = CENTER_MASS
