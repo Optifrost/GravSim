@@ -7,6 +7,74 @@ from config import *
 import numpy as np
 
 
+# Sun texture - will be loaded after display is initialized
+SUN_TEXTURE = None
+# Black hole texture - will be generated if not already loaded
+BLACKHOLE_TEXTURE = None
+
+
+def load_sun_texture():
+    """Load the sun texture if not already loaded."""
+    global SUN_TEXTURE
+    if SUN_TEXTURE is not None:
+        return
+    try:
+        # Try to load a sun texture image from the current directory
+        SUN_TEXTURE = pygame.image.load("sun_texture.png").convert_alpha()
+    except Exception as e:
+        # If loading fails, we'll fall back to drawing a circle
+        print(f"Could not load sun texture: {e}")
+        SUN_TEXTURE = None
+
+
+def load_blackhole_texture():
+    """Create a simple black hole texture if not already created."""
+    global BLACKHOLE_TEXTURE
+    if BLACKHOLE_TEXTURE is not None:
+        return
+    size = 256
+    surf = pygame.Surface((size, size), pygame.SRCALPHA)
+    # Fill with transparent black (fully opaque black)
+    surf.fill((0, 0, 0, 255))
+    center = (size // 2, size // 2)
+    # Outer ring radius
+    outer_radius = size // 2 - 5
+    # Inner radius for the black hole 'shadow' (just a smaller circle)
+    inner_radius = outer_radius // 2
+    # Draw a bright ring (accretion disk) - yellowish
+    ring_color = (255, 165, 0, 255)  # orange
+    pygame.draw.circle(surf, ring_color, center, outer_radius, 3)
+    # Optionally, add a inner darker circle to represent the event horizon
+    pygame.draw.circle(surf, (0, 0, 0, 255), center, inner_radius)
+    BLACKHOLE_TEXTURE = surf
+
+
+def load_blackhole_texture():
+    """Create a black hole texture if not already created."""
+    global BLACKHOLE_TEXTURE
+    if BLACKHOLE_TEXTURE is not None:
+        return
+    # Create a simple black hole texture: black background with a white/accretion ring
+    size = 256
+    surf = pygame.Surface((size, size), pygame.SRCALPHA)
+    # Fill with transparent black (fully opaque black)
+    surf.fill((0, 0, 0, 255))
+    # Draw a white/accretion ring
+    center = (size // 2, size // 2)
+    radius_outer = size // 2 - 5
+    # Ring thickness
+    thickness = max(2, size // 32)
+    # Use a yellow-orange color for the accretion disk
+    ring_color = (255, 165, 0, 255)  # orange
+    # Draw a circle for the outer edge
+    pygame.draw.circle(surf, ring_color, center, radius_outer, thickness)
+    # Optionally add inner dark circle (event horizon) - already black
+    # For a more pronounced effect, draw a darker inner circle
+    inner_radius = radius_outer // 2
+    pygame.draw.circle(surf, (20, 20, 20, 255), center, inner_radius)
+    BLACKHOLE_TEXTURE = surf
+
+
 def world_to_screen(world_pos, camera_pos, camera_rot, zoom_level, width, height):
     """Convert world coordinates to screen coordinates with 3D rotation"""
     # Handle both 2D and 3D positions
@@ -165,9 +233,6 @@ def draw_trails(screen, planets, photons, camera_pos, camera_rot, zoom_level, wi
                 for i in range(len(points) - 1):
                     alpha = int(100 * (i + 1) / len(points))  # Fade out older points
                     if alpha > 0:
-                        color = (*planet_data['color'][:3], alpha)  # RGB with alpha
-                        # Since pygame doesn't natively support alpha in draw.line, we'll use a different approach
-                        # For simplicity, we'll draw thicker lines for newer points
                         width_factor = 1 + (i / len(points))  # Thicker for newer points
                         pygame.draw.line(
                             screen,
@@ -204,11 +269,40 @@ def draw_trails(screen, planets, photons, camera_pos, camera_rot, zoom_level, wi
                         )
 
 
-def draw_bodies(screen, planets, photons, center_body, camera_pos, camera_rot, zoom_level, width, height):
+def draw_bodies(screen, planets, photons, center_body, camera_pos, camera_rot, zoom_level, width, height, center_mass):
     """Draw all celestial bodies"""
-    # Draw central body (sun)
+    # Ensure sun texture is loaded if possible
+    load_sun_texture()
+    # Ensure black hole texture is generated if needed
+    load_blackhole_texture()
+
+    # Determine if we should render as a black hole
+    is_black_hole = center_mass > BLACK_HOLE_THRESHOLD
+
+    # Draw central body (sun or black hole)
     sun_pos = world_to_screen(center_body.position, camera_pos, camera_rot, zoom_level, width, height)
-    pygame.draw.circle(screen, SUN_COLOR, sun_pos, 15)
+    if is_black_hole:
+        # Use black hole texture if available, else draw a black circle with optional accretion ring
+        if BLACKHOLE_TEXTURE is not None:
+            bh_size = 30  # diameter in pixels
+            scaled_bh = pygame.transform.scale(BLACKHOLE_TEXTURE, (bh_size, bh_size))
+            bh_rect = scaled_bh.get_rect(center=sun_pos)
+            screen.blit(scaled_bh, bh_rect)
+        else:
+            # Fallback: simple black circle
+            pygame.draw.circle(screen, (0, 0, 0), sun_pos, 15)
+    else:
+        # Sun rendering
+        if SUN_TEXTURE is not None:
+            # Calculate the size to draw the sun (fixed diameter of 30 pixels to match the original circle radius of 15)
+            sun_size = 30  # diameter in pixels
+            scaled_sun = pygame.transform.scale(SUN_TEXTURE, (sun_size, sun_size))
+            # Blit the image centered at sun_pos
+            sun_rect = scaled_sun.get_rect(center=sun_pos)
+            screen.blit(scaled_sun, sun_rect)
+        else:
+            # Fallback to the circle
+            pygame.draw.circle(screen, SUN_COLOR, sun_pos, 15)
 
     # Draw planets
     for planet_data in planets:

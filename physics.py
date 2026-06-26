@@ -7,6 +7,10 @@ import numpy as np
 from config import *
 
 
+# Capture radius for black hole (world units) - tuned for simulation scale
+BLACK_HOLE_CAPTURE_RADIUS = 40.0
+
+
 def add_central_force(forces, body, center_body, softening_squared, g_constant, center_mass):
     """Accumulate gravity from the central body onto a dynamic body."""
     dx = center_body.position.x - body.position.x
@@ -197,20 +201,42 @@ def limit_velocities(photons, max_velocity):
 
 def check_black_hole_capture(photons, center_body, center_mass, black_hole_threshold,
                              speed_of_light, g_constant=G_CONSTANT):
-    """Check for black hole formation and adjust photon velocities accordingly"""
+    """Check for black hole formation and return photons that should be removed"""
+    photons_to_remove = []
     if center_mass > black_hole_threshold:
-        # Calculate Schwarzschild radius (simplified)
-        schwarzschild_radius = 2 * g_constant * \
-            center_mass / (speed_of_light ** 2)
+        # Use a fixed capture radius for simulation stability and visibility
+        capture_radius = BLACK_HOLE_CAPTURE_RADIUS
 
         for photon_data in photons:
-            # If photon is within schwarzschild radius, it's trapped (simplified)
+            # If photon is within capture radius, it's captured by black hole
             dx = photon_data['body'].position.x - center_body.position.x
             dy = photon_data['body'].position.y - center_body.position.y
             distance = math.sqrt(dx * dx + dy * dy)
-            if distance < schwarzschild_radius:
-                # Photon is trapped - reduce velocity significantly (simulating capture)
-                photon_data['body'].velocity *= 0.99
+            if distance < capture_radius:
+                # Mark photon for removal (it's fallen into the black hole)
+                photons_to_remove.append(photon_data)
+
+    return photons_to_remove
+
+
+def check_black_hole_capture_planets(planets, center_body, center_mass, black_hole_threshold,
+                                     speed_of_light, g_constant=G_CONSTANT):
+    """Check for black hole formation and return planets that should be removed"""
+    planets_to_remove = []
+    if center_mass > black_hole_threshold:
+        # Use a fixed capture radius for simulation stability and visibility
+        capture_radius = BLACK_HOLE_CAPTURE_RADIUS
+
+        for planet_data in planets:
+            # If planet is within capture radius, it's captured by black hole
+            dx = planet_data['body'].position.x - center_body.position.x
+            dy = planet_data['body'].position.y - center_body.position.y
+            distance = math.sqrt(dx * dx + dy * dy)
+            if distance < capture_radius:
+                # Mark planet for removal (it's fallen into the black hole)
+                planets_to_remove.append(planet_data)
+
+    return planets_to_remove
 
 
 def update_physics_space(space, time_step):

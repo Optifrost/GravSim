@@ -1,6 +1,6 @@
-# StarDance
+# GravSim
 
-StarDance is an interactive orbital physics sandbox built with Pygame and Pymunk.
+GravSim is an interactive orbital physics sandbox built with Pygame and Pymunk.
 
 ## Run
 

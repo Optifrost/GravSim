@@ -228,6 +228,7 @@ def add_photon_at_world(world_pos):
     set_status("Added photon.")
     return photon
 
+
 try:
     # Run until user quits (remove frame limit for normal operation)
     print("Starting main loop", flush=True)
@@ -236,7 +237,7 @@ try:
         screen.fill((5, 5, 15))  # Very dark space background
 
         # Draw gridlines to help visualize dimensions
-        draw_gridlines(screen, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT)
+        # draw_gridlines(screen, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT)
 
         # Handle events
         for event in pygame.event.get():
@@ -457,7 +458,17 @@ try:
                                         adjustment[1] / planet_data['body'].mass)
 
                 limit_velocities(photons, MAX_VELOCITY)
-                check_black_hole_capture(
+                # Limit planet velocities to prevent numerical explosion
+                for planet_data in planets:
+                    speed = math.sqrt(
+                        planet_data['body'].velocity.x**2 +
+                        planet_data['body'].velocity.y**2)
+                    if speed > MAX_VELOCITY:
+                        scale = MAX_VELOCITY / speed
+                        planet_data['body'].velocity = (
+                            planet_data['body'].velocity.x * scale,
+                            planet_data['body'].velocity.y * scale)
+                photons_to_remove = check_black_hole_capture(
                     photons,
                     center_body,
                     CENTER_MASS,
@@ -465,6 +476,22 @@ try:
                     SPEED_OF_LIGHT,
                     G_CONSTANT
                 )
+                # Remove photons that have fallen into the black hole
+                for photon_data in photons_to_remove:
+                    if photon_data in photons:
+                        photons.remove(photon_data)
+                    space.remove(photon_data['body'], photon_data['shape'])
+                planets_to_remove = check_black_hole_capture_planets(
+                    planets,
+                    center_body,
+                    CENTER_MASS,
+                    BLACK_HOLE_THRESHOLD,
+                    SPEED_OF_LIGHT,
+                    G_CONSTANT
+                )
+                # Remove planets that have fallen into the black hole
+                for planet_data in planets_to_remove:
+                    remove_planet(planet_data)
                 update_physics_space(space, PHYSICS_TIME_STEP)
 
                 # Train AI models less frequently for better performance.
@@ -509,7 +536,7 @@ try:
         try:
             # Draw everything
             draw_trails(screen, planets, photons, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT)
-            draw_bodies(screen, planets, photons, center_body, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT)
+            draw_bodies(screen, planets, photons, center_body, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT, CENTER_MASS)
             draw_selection_indicator(
                 screen,
                 selected_photon or selected_planet,
