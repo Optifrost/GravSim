@@ -8,8 +8,8 @@ WIDTH, HEIGHT = 1400, 900  # Increased resolution
 TARGET_FPS = 120  # Target FPS as requested by user
 
 # Physics constants
-G_CONSTANT = 200000  # Gravitational constant (adjusted for nice visuals)
-CENTER_MASS = 1000000  # Mass of central body
+G_CONSTANT = 100  # Gravitational constant (adjusted for nice visuals)
+CENTER_MASS = 100000  # Mass of central body
 PLANET_MASS = 10  # Base mass of each planet
 PHOTON_MASS = 0.001  # Very small mass for photons (affected by gravity but minimal effect)
 SPEED_OF_LIGHT = 100  # Simulated speed of light (adjusted for visualization)

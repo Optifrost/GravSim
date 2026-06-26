@@ -45,6 +45,11 @@ predictors = {}  # planet_id -> model
 optimizers = {}  # planet_id -> optimizer
 trained_predictors = set()
 
+# Black hole mode state
+black_hole_mode = False
+_stored_center_mass = CENTER_MASS
+_stored_g_constant = G_CONSTANT
+
 # Entity lists
 planets = []
 photons = []
@@ -274,11 +279,21 @@ try:
                 elif event.key == pygame.K_p:
                     add_random_photon()
                 elif event.key == pygame.K_b:
-                    # Instantly set mass to black hole level and increase
-                    # gravity for effect
-                    CENTER_MASS = BLACK_HOLE_THRESHOLD * 2  # Well above threshold
-                    G_CONSTANT = 2000000  # Increase gravitational constant for stronger effect
-                    set_status("Black hole mode enabled.")
+                    global black_hole_mode, _stored_center_mass, _stored_g_constant
+                    if not black_hole_mode:
+                        # Enter black hole mode
+                        _stored_center_mass = CENTER_MASS
+                        _stored_g_constant = G_CONSTANT
+                        CENTER_MASS = BLACK_HOLE_THRESHOLD * 2  # Well above threshold
+                        G_CONSTANT = 2000000  # Increase gravitational constant for stronger effect
+                        black_hole_mode = True
+                        set_status("Black hole mode enabled.")
+                    else:
+                        # Exit black hole mode
+                        CENTER_MASS = _stored_center_mass
+                        G_CONSTANT = _stored_g_constant
+                        black_hole_mode = False
+                        set_status("Black hole mode disabled.")
                 elif event.key == pygame.K_c:
                     clear_scene()
                 elif event.key == pygame.K_HOME:
