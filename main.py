@@ -1,5 +1,10 @@
 # main.py
-# Main entry point for the StarDance orbital physics simulator
+# Entry point for the StarDance orbital physics simulator.
+#
+# This script initializes the simulation environment, handles user input,
+# updates the physics simulation, and renders the visual output.
+# It integrates Pygame for rendering, Pymunk for physics, and PyTorch
+# for optional AI-based orbit prediction.
 
 import torch.optim as optim
 import math
@@ -16,108 +21,117 @@ from physics import *
 from rendering import *
 import orbit_predictor
 
-# Initialize pygame
+# Initialize Pygame and suppress known warnings.
 pygame.init()
 warnings.filterwarnings(
     "ignore",
     message="pkg_resources is deprecated as an API")
 warnings.filterwarnings("ignore", category=UserWarning, module='pygame')
 
-# Create display
+# Create the display window using dimensions from config.
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Advanced Orbital Physics Simulator")
 clock = pygame.time.Clock()
-target_fps = TARGET_FPS if 'TARGET_FPS' in globals() else 120  # Target FPS as requested by user
+# Target FPS can be overridden by a global TARGET_FPS; otherwise use configured value.
+target_fps = TARGET_FPS if 'TARGET_FPS' in globals() else 120
 print(f"Display initialized: {WIDTH}x{HEIGHT}")
 ERROR_LOG_PATH = Path("runtime_errors.log")
 
-# Create physics space
+# --- Physics setup ---
+# Create a Pymunk space; we will apply custom gravity forces instead of using space.gravity.
 space = pymunk.Space()
-space.gravity = (0, 0)  # We'll apply our own central forces
+space.gravity = (0, 0)  # Nullify built‑in gravity; we apply our own central force.
 
-# Create central body (static) at world origin
+# Create a static central body (e.g., a star) at the world origin.
 center_body = pymunk.Body(body_type=pymunk.Body.STATIC)
 center_body.position = (0, 0)
 space.add(center_body)
 
-# Initialize predictor models for each planet (we'll create them as needed)
-predictors = {}  # planet_id -> model
-optimizers = {}  # planet_id -> optimizer
-trained_predictors = set()
-# Black hole mode toggle state
+# --- AI prediction structures ---
+# Dictionaries that map a planet's Pymunk body ID to its predictor model and optimizer.
+predictors = {}          # planet_id -> OrbitPredictor model
+optimizers = {}          # planet_id -> Adam optimizer
+trained_predictors = set()  # Set of body IDs for which training is complete.
+
+# Black‑hole mode toggle state.
 black_hole_mode = False
-_stored_center_mass = 0
-_stored_g_constant = 0
+_stored_center_mass = 0      # Backup of CENTER_MASS when entering black‑hole mode.
+_stored_g_constant = 0       # Backup of G_CONSTANT when entering black‑hole mode.
 
+# --- Entity containers ---
+planets = []   # List of planet data dictionaries.
+photons = []   # List of photon data dictionaries.
 
-# Entity lists
-planets = []
-photons = []
-
+# Optionally spawn a predefined set of planets at startup.
 if START_WITH_SAMPLE_PLANETS:
     for i, distance in enumerate(SAMPLE_PLANET_DISTANCES):
         angle = (i * 2 * math.pi) / len(SAMPLE_PLANET_DISTANCES)
         planet = create_planet(
-            space, distance, angle=angle, color_index=i,
+            space,
+            distance,
+            angle=angle,
+            color_index=i,
             center_position=center_body.position,
-            g_constant=G_CONSTANT, center_mass=CENTER_MASS
+            g_constant=G_CONSTANT,
+            center_mass=CENTER_MASS
         )
         planets.append(planet)
 
+# Optionally spawn a predefined set of photons at startup.
 if START_WITH_SAMPLE_PHOTONS and PHOTON_COUNT > 0:
     for i in range(PHOTON_COUNT):
         angle = (i * 2 * math.pi) / PHOTON_COUNT
         distance = random.randint(80, 120)
         photon = create_photon(
-            space, distance, angle,
+            space,
+            distance,
+            angle,
             center_position=center_body.position,
-            g_constant=G_CONSTANT, center_mass=CENTER_MASS
+            g_constant=G_CONSTANT,
+            center_mass=CENTER_MASS
         )
         photons.append(photon)
 
 print(f"Starting empty scene with {len(planets)} planets and {len(photons)} photons", flush=True)
 
-# Font for UI
+# --- User interface fonts ---
 font = pygame.font.Font(None, FONT_SIZE_LARGE)
 small_font = pygame.font.Font(None, FONT_SIZE_MEDIUM)
-title_font = pygame.font.Font(None, 36)  # Keep original for title
+title_font = pygame.font.Font(None, 36)  # Reserved for the title display.
 
-# Camera state
-camera_pos = INITIAL_CAMERA_POS.copy()  # x, y, z position
-camera_rot = INITIAL_CAMERA_ROT.copy()  # pitch, yaw, roll (in radians)
+# --- Camera state ---
+camera_pos = INITIAL_CAMERA_POS.copy()  # [x, y, z] position of the camera.
+camera_rot = INITIAL_CAMERA_ROT.copy()  # [pitch, yaw, roll] in radians.
 move_speed = MOVE_SPEED
 rot_speed = ROT_SPEED
 zoom_level = INITIAL_ZOOM
 min_zoom = MIN_ZOOM
 max_zoom = MAX_ZOOM
 
-# UI state
-show_ui = True
-ui_hidden_timer = 0
-AUTO_HIDE_DELAY = 300  # frames (5 seconds at 60fps)
-selected_planet = None  # Currently selected planet for modification
-selected_photon = None  # Currently selected photon for deletion
+# --- UI interaction state ---
+show_ui = True                 # Whether the UI overlay is currently visible.
+ui_hidden_timer = 0            # Timer used to auto‑hide the UI after inactivity.
+AUTO_HIDE_DELAY = 300          # Frames (5 seconds at 60 FPS) before auto‑hiding UI.
+selected_planet = None         # Currently selected planet (for mass/radius edits).
+selected_photon = None         # Currently selected photon (for deletion).
 status_message = "Click empty space to add a planet. Right-click to add a photon."
-status_timer = target_fps * 5
-last_error = None
-error_timer = 0
+status_timer = target_fps * 5  # How long to show a status message (in frames).
+last_error = None              # Stores the last exception for on‑screen display.
+error_timer = 0                # Timer for clearing the last error display.
 
-# Main loop
-running = True
-paused = False
-frame_count = 0
-ai_train_counter = 0  # Train AI less frequently for performance
-
-
+# ----- Helper functions -----
 def set_status(message, frames=None):
-    """Show a short status message in the UI."""
+    """Display a transient status message in the UI."""
     global status_message, status_timer
     status_message = message
     status_timer = frames if frames is not None else target_fps * 4
 
 
 def log_runtime_error(context, exc):
-    """Log runtime errors and keep the simulator window alive where possible."""
+    """Record an exception to the error log and pause the simulation.
+
+    The simulator window remains open so the user can see the error.
+    """
     global last_error, error_timer, paused
     last_error = f"{context}: {exc.__class__.__name__}: {exc}"
     error_timer = target_fps * 8
@@ -131,6 +145,7 @@ def log_runtime_error(context, exc):
 
 
 def remove_predictor_for_body(body):
+    """Remove AI predictor and optimizer associated with a planet's body."""
     planet_id = id(body)
     predictors.pop(planet_id, None)
     optimizers.pop(planet_id, None)
@@ -138,6 +153,7 @@ def remove_predictor_for_body(body):
 
 
 def safe_space_remove(entity):
+    """Safely remove a Pymunk body and shape from the space."""
     try:
         space.remove(entity['body'], entity['shape'])
     except Exception as exc:
@@ -145,6 +161,7 @@ def safe_space_remove(entity):
 
 
 def remove_planet(planet):
+    """Remove a planet from the simulation and clean up its AI resources."""
     global selected_planet
     if planet in planets:
         remove_predictor_for_body(planet['body'])
@@ -156,6 +173,7 @@ def remove_planet(planet):
 
 
 def remove_photon(photon):
+    """Remove a photon from the simulation."""
     global selected_photon
     if photon in photons:
         safe_space_remove(photon)
@@ -166,6 +184,7 @@ def remove_photon(photon):
 
 
 def clear_scene():
+    """Remove all planets and photons, and reset AI tracking structures."""
     global selected_planet, selected_photon
     for planet in list(planets):
         remove_planet(planet)
@@ -180,12 +199,18 @@ def clear_scene():
 
 
 def reset_view():
+    """Reset camera position and rotation to their initial values."""
     camera_pos[:] = INITIAL_CAMERA_POS.copy()
     camera_rot[:] = INITIAL_CAMERA_ROT.copy()
     set_status("Camera reset.")
 
 
 def add_planet_at_world(world_pos):
+    """Create a planet at the supplied world coordinates where the user clicked.
+
+    Prevents creation too close to the central body.
+    Returns the created planet dictionary or None if too close.
+    """
     dx = world_pos[0] - center_body.position.x
     dy = world_pos[1] - center_body.position.y
     distance = math.sqrt(dx * dx + dy * dy)
@@ -196,10 +221,14 @@ def add_planet_at_world(world_pos):
     angle = math.atan2(dy, dx)
     mass = random.uniform(5, 25)
     planet = create_planet(
-        space, distance, angle, mass,
+        space,
+        distance,
+        angle,
+        mass,
         color_index=len(planets),
         center_position=center_body.position,
-        g_constant=G_CONSTANT, center_mass=CENTER_MASS
+        g_constant=G_CONSTANT,
+        center_mass=CENTER_MASS
     )
     planets.append(planet)
     set_status(f"Added {planet['name']} at radius {int(distance)}.")
@@ -207,12 +236,16 @@ def add_planet_at_world(world_pos):
 
 
 def add_random_photon():
+    """Spawn a photon at a random distance and angle."""
     angle = random.uniform(0, 2 * math.pi)
     distance = random.randint(100, 200)
     photon = create_photon(
-        space, distance, angle,
+        space,
+        distance,
+        angle,
         center_position=center_body.position,
-        g_constant=G_CONSTANT, center_mass=CENTER_MASS
+        g_constant=G_CONSTANT,
+        center_mass=CENTER_MASS
     )
     photons.append(photon)
     set_status("Added photon.")
@@ -220,31 +253,37 @@ def add_random_photon():
 
 
 def add_photon_at_world(world_pos):
+    """Spawn a photon at the world position corresponding to the mouse cursor."""
     dx = world_pos[0] - center_body.position.x
     dy = world_pos[1] - center_body.position.y
     distance = max(math.sqrt(dx * dx + dy * dy), 50)
     angle = math.atan2(dy, dx)
     photon = create_photon(
-        space, distance, angle,
+        space,
+        distance,
+        angle,
         center_position=center_body.position,
-        g_constant=G_CONSTANT, center_mass=CENTER_MASS
+        g_constant=G_CONSTANT,
+        center_mass=CENTER_MASS
     )
     photons.append(photon)
     set_status("Added photon.")
     return photon
 
 
+# ----- Main execution loop -----
 try:
-    # Run until user quits (remove frame limit for normal operation)
     print("Starting main loop", flush=True)
+    running = True
+    paused = False
+    frame_count = 0
+    ai_train_counter = 0  # Counter to throttle AI training frequency.
+
     while running:
-        # Clear screen at start of loop with dark space background
+        # Clear the screen with a dark space‑like background.
         screen.fill((5, 5, 15))  # Very dark space background
 
-        # Draw gridlines to help visualize dimensions
-        # draw_gridlines(screen, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT)
-
-        # Handle events
+        # Event handling.
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -255,40 +294,40 @@ try:
                     paused = not paused
                     set_status("Paused." if paused else "Resumed.")
                 elif event.key == pygame.K_h:
-                    # Toggle UI visibility
+                    # Toggle UI visibility.
                     show_ui = not show_ui
                     ui_hidden_timer = 0
                     set_status("UI shown." if show_ui else "UI hidden.")
                 elif event.key == pygame.K_BACKSPACE:
-                    # Remove last planet (if any exist)
+                    # Remove the most recently added planet, if any.
                     if len(planets) > 0:
                         remove_planet(planets[-1])
                 elif event.key == pygame.K_g:
-                    # Generate training data and train models (do this less
-                    # frequently for performance)
-                    ai_train_counter = 0  # Reset counter to trigger training
+                    # Queue AI training (model update) for better performance.
+                    ai_train_counter = 0
                     set_status("AI training queued.")
                 elif event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
-                    # Increase gravitational constant
+                    # Increase the gravitational constant.
                     G_CONSTANT *= 1.1
                     set_status(f"Gravity increased to {int(G_CONSTANT)}.")
                 elif event.key == pygame.K_MINUS:
-                    # Decrease gravitational constant
+                    # Decrease the gravitational constant.
                     G_CONSTANT /= 1.1
                     set_status(f"Gravity decreased to {int(G_CONSTANT)}.")
                 elif event.key == pygame.K_p:
                     add_random_photon()
                 elif event.key == pygame.K_b:
+                    # Toggle black‑hole mode.
                     if not black_hole_mode:
-                        # Enter black hole mode
+                        # Enter black‑hole mode: store current values and apply extreme gravity.
                         _stored_center_mass = CENTER_MASS
                         _stored_g_constant = G_CONSTANT
-                        CENTER_MASS = BLACK_HOLE_THRESHOLD * 2  # Well above threshold
-                        G_CONSTANT = 2000000  # Increase gravitational constant for stronger effect
+                        CENTER_MASS = BLACK_HOLE_THRESHOLD * 2  # Well above threshold.
+                        G_CONSTANT = 2000000  # Amplify gravity for visual effect.
                         black_hole_mode = True
                         set_status("Black hole mode enabled.")
                     else:
-                        # Exit black hole mode
+                        # Exit black‑hole mode: restore the original gravity and mass.
                         CENTER_MASS = _stored_center_mass
                         G_CONSTANT = _stored_g_constant
                         black_hole_mode = False
@@ -298,85 +337,84 @@ try:
                 elif event.key == pygame.K_HOME:
                     reset_view()
                 elif event.key == pygame.K_DELETE:
-                    # Remove selected photon first (higher priority)
+                    # Prefer deleting a selected photon; otherwise delete selected planet.
                     if selected_photon is not None:
                         remove_photon(selected_photon)
-                    # Then remove selected planet if no photon selected
                     elif selected_planet is not None:
                         remove_planet(selected_planet)
                 elif event.key == pygame.K_m:
-                    # Increase mass of selected planet
+                    # Increase mass of the selected planet.
                     if selected_planet is not None:
                         update_planet_mass(selected_planet, 1.2)
                         set_status(f"{selected_planet['name']} mass: {selected_planet['mass']:.1f}")
                 elif event.key == pygame.K_n:
-                    # Decrease mass of selected planet
+                    # Decrease mass of the selected planet.
                     if selected_planet is not None and selected_planet['mass'] > 1:
                         update_planet_mass(selected_planet, 1/1.2)
                         set_status(f"{selected_planet['name']} mass: {selected_planet['mass']:.1f}")
                 elif event.key == pygame.K_r:
-                    # Increase radius of selected planet (visual only)
+                    # Increase visual radius of the selected planet (visual only).
                     if selected_planet is not None:
                         update_planet_radius(selected_planet, 1.2)
                         set_status(f"{selected_planet['name']} visual size increased.")
                 elif event.key == pygame.K_f:
-                    # Decrease radius of selected planet (visual only)
+                    # Decrease visual radius of the selected planet (visual only).
                     if selected_planet is not None:
                         update_planet_radius(selected_planet, 1/1.2)
                         set_status(f"{selected_planet['name']} visual size decreased.")
                 elif event.key == pygame.K_i:
-                    # Increase zoom (move closer)
+                    # Zoom in.
                     zoom_level = min(max_zoom, zoom_level * 1.1)
                     set_status(f"Zoom: {zoom_level:.2f}x")
                 elif event.key == pygame.K_o:
-                    # Decrease zoom (move farther)
+                    # Zoom out.
                     zoom_level = max(min_zoom, zoom_level / 1.1)
                     set_status(f"Zoom: {zoom_level:.2f}x")
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 4:  # Mouse wheel up
+                if event.button == 4:  # Mouse wheel up → zoom in.
                     zoom_level = min(max_zoom, zoom_level * 1.1)
-                elif event.button == 5:  # Mouse wheel down
+                elif event.button == 5:  # Mouse wheel down → zoom out.
                     zoom_level = max(min_zoom, zoom_level / 1.1)
-                elif event.button == 1:  # Left click - add planet or select existing
+                elif event.button == 1:  # Left click: add planet or select existing.
                     world_pos = screen_to_world(
-                        (event.pos[0], event.pos[1]), camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT)  # Assume z=0 for clicking
+                        (event.pos[0], event.pos[1]), camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT
+                    )  # Assume z = 0 for clicking.
 
-                    # First check if we clicked on an existing photon
+                    # Check if click hit a photon first (higher priority for selection).
                     clicked_photon = select_entity_at_position(
-                        photons, event.pos, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT, CLICK_DISTANCE_THRESHOLD)
-
+                        photons, event.pos, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT, CLICK_DISTANCE_THRESHOLD
+                    )
                     if clicked_photon:
-                        # Select the photon for deletion
                         selected_photon = clicked_photon
-                        selected_planet = None  # Deselect any planet
+                        selected_planet = None
                         set_status("Photon selected. Press Delete to remove it.")
                     else:
-                        # First check if we clicked on an existing planet
+                        # Otherwise check for a planet.
                         clicked_planet = select_entity_at_position(
-                            planets, event.pos, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT, CLICK_DISTANCE_THRESHOLD)
-
+                            planets, event.pos, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT, CLICK_DISTANCE_THRESHOLD
+                        )
                         if clicked_planet:
-                            # Select the planet for modification
                             selected_planet = clicked_planet
-                            selected_photon = None  # Deselect any photon
+                            selected_photon = None
                             set_status(f"{selected_planet['name']} selected.")
                         else:
+                            # No entity clicked → create a new planet at the cursor location.
                             add_planet_at_world(world_pos)
-                elif event.button == 3:  # Right click - add photon at cursor
+                elif event.button == 3:  # Right click: add photon at cursor.
                     world_pos = screen_to_world(
-                        (event.pos[0], event.pos[1]), camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT)
+                        (event.pos[0], event.pos[1]), camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT
+                    )
                     add_photon_at_world(world_pos)
             elif event.type == pygame.MOUSEMOTION:
-                if event.buttons[0]:  # Left mouse button dragged for panning
-                    # Rotate camera instead of panning for 3D feel
-                    camera_rot[1] -= event.rel[0] * \
-                        rot_speed  # Yaw (left/right)
-                    camera_rot[0] -= event.rel[1] * \
-                        rot_speed  # Pitch (up/down)
-                    # Limit pitch to avoid flipping
+                if event.buttons[0]:  # Left mouse button dragged → rotate camera.
+                    # Convert mouse movement to yaw/pitch adjustments.
+                    camera_rot[1] -= event.rel[0] * rot_speed  # Yaw (left/right).
+                    camera_rot[0] -= event.rel[1] * rot_speed  # Pitch (up/down).
+                    # Clamp pitch to avoid gimbal lock.
                     camera_rot[0] = max(-3.14159 / 2 + 0.1,
                                         min(3.14159 / 2 - 0.1, camera_rot[0]))
 
+        # Continuous keyboard handling for camera movement.
         pressed_keys = pygame.key.get_pressed()
         camera_step = move_speed / max(zoom_level, 0.1)
         if pressed_keys[pygame.K_LEFT]:
@@ -395,16 +433,17 @@ try:
             camera_pos[0] -= camera_step
         if pressed_keys[pygame.K_d]:
             camera_pos[0] += camera_step
+        # Clamp pitch after movement.
         camera_rot[0] = max(-3.14159 / 2 + 0.1,
                             min(3.14159 / 2 - 0.1, camera_rot[0]))
 
-        # Auto-hide UI after delay
+        # Auto‑hide the UI after a period of inactivity.
         if show_ui and ui_hidden_timer > 0:
             ui_hidden_timer -= 1
             if ui_hidden_timer <= 0:
                 show_ui = False
 
-        # Show UI temporarily when interacting
+        # Temporarily show UI when the user interacts with controls.
         if not show_ui and (
                 pygame.mouse.get_pressed()[0] or any(
                     pressed_keys[key] for key in [
@@ -430,9 +469,11 @@ try:
             show_ui = True
             ui_hidden_timer = AUTO_HIDE_DELAY
 
+        # --- Physics update (runs only when not paused) ---
         if not paused:
             try:
                 if planets or photons:
+                    # Compute gravitational forces acting on each body.
                     forces = calculate_forces(
                         planets,
                         photons,
@@ -441,47 +482,60 @@ try:
                         G_CONSTANT,
                         CENTER_MASS
                     )
+                    # Apply the computed forces.
                     apply_forces(planets, photons, forces)
+                    # Integrate positions based on current velocities.
                     update_positions(planets, photons)
 
-                    # Occasionally use AI prediction to nudge velocity.
-                    if frame_count % 60 == 0:
+                    # --- Optional AI‑based velocity adjustment ---
+                    # Blend a predicted position with the simulated one to improve stability.
+                    if frame_count % 60 == 0:  # Run AI logic once per second.
                         for planet_data in planets:
                             if len(planet_data['history']) > AI_MIN_HISTORY_FOR_PREDICTION:
                                 planet_id = id(planet_data['body'])
+                                # Lazily create predictor and optimizer if needed.
                                 if planet_id not in predictors:
                                     predictors[planet_id] = orbit_predictor.OrbitPredictor(input_size=AI_INPUT_SIZE)
                                     optimizers[planet_id] = optim.Adam(
-                                        predictors[planet_id].parameters(), lr=AI_LEARNING_RATE)
+                                        predictors[planet_id].parameters(), lr=AI_LEARNING_RATE
+                                    )
 
                                 predicted_pos = None
                                 if planet_id in trained_predictors:
                                     predicted_pos = orbit_predictor.predict_planet_position(
                                         predictors[planet_id],
-                                        planet_data['history'])
+                                        planet_data['history']
+                                    )
                                 if predicted_pos is not None:
+                                    # Blend actual and predicted positions (70% physics, 30% AI).
                                     blend_factor = 0.3
                                     current_pos = np.array(
-                                        [planet_data['body'].position.x, planet_data['body'].position.y])
+                                        [planet_data['body'].position.x, planet_data['body'].position.y]
+                                    )
                                     predicted_pos_np = np.array(predicted_pos)
-                                    blended_pos = current_pos * \
-                                        (1 - blend_factor) + predicted_pos_np * blend_factor
+                                    blended_pos = current_pos * (1 - blend_factor) + predicted_pos_np * blend_factor
+                                    # Small corrective nudge toward the blended position.
                                     adjustment = (blended_pos - current_pos) * 0.1
                                     planet_data['body'].velocity += (
                                         adjustment[0] / planet_data['body'].mass,
-                                        adjustment[1] / planet_data['body'].mass)
+                                        adjustment[1] / planet_data['body'].mass
+                                    )
 
+                # Apply velocity caps to prevent numerical explosion.
                 limit_velocities(photons, MAX_VELOCITY)
-                # Limit planet velocities to prevent numerical explosion
                 for planet_data in planets:
                     speed = math.sqrt(
                         planet_data['body'].velocity.x**2 +
-                        planet_data['body'].velocity.y**2)
+                        planet_data['body'].velocity.y**2
+                    )
                     if speed > MAX_VELOCITY:
                         scale = MAX_VELOCITY / speed
                         planet_data['body'].velocity = (
                             planet_data['body'].velocity.x * scale,
-                            planet_data['body'].velocity.y * scale)
+                            planet_data['body'].velocity.y * scale
+                        )
+
+                # --- Black‑hole capture detection ---
                 photons_to_remove = check_black_hole_capture(
                     photons,
                     center_body,
@@ -490,11 +544,11 @@ try:
                     SPEED_OF_LIGHT,
                     G_CONSTANT
                 )
-                # Remove photons that have fallen into the black hole
                 for photon_data in photons_to_remove:
                     if photon_data in photons:
                         photons.remove(photon_data)
                     space.remove(photon_data['body'], photon_data['shape'])
+
                 planets_to_remove = check_black_hole_capture_planets(
                     planets,
                     center_body,
@@ -503,12 +557,13 @@ try:
                     SPEED_OF_LIGHT,
                     G_CONSTANT
                 )
-                # Remove planets that have fallen into the black hole
                 for planet_data in planets_to_remove:
                     remove_planet(planet_data)
+
+                # Step the Pymunk space forward.
                 update_physics_space(space, PHYSICS_TIME_STEP)
 
-                # Train AI models less frequently for better performance.
+                # --- Periodic AI model training ---
                 ai_train_counter += 1
                 if ai_train_counter >= AI_TRAIN_INTERVAL:
                     ai_train_counter = 0
@@ -517,17 +572,20 @@ try:
                         if planet_id not in predictors:
                             predictors[planet_id] = orbit_predictor.OrbitPredictor(input_size=AI_INPUT_SIZE)
                             optimizers[planet_id] = optim.Adam(
-                                predictors[planet_id].parameters(), lr=AI_LEARNING_RATE)
+                                predictors[planet_id].parameters(), lr=AI_LEARNING_RATE
+                            )
                         if len(planet_data['history']) > AI_MIN_HISTORY_FOR_TRAINING:
                             orbit_predictor.train_planet_predictor(
                                 predictors[planet_id],
                                 optimizers[planet_id],
                                 planet_data['history'],
-                                epochs=AI_EPOCHS_PER_TRAINING)
+                                epochs=AI_EPOCHS_PER_TRAINING
+                            )
                             trained_predictors.add(planet_id)
             except Exception as exc:
                 log_runtime_error("physics update", exc)
 
+        # Frame‑counters and status timers.
         frame_count += 1
         if status_timer > 0:
             status_timer -= 1
@@ -536,21 +594,24 @@ try:
         elif last_error is not None:
             last_error = None
 
-        # Print FPS and object counts to console every second (at target_fps)
+        # Periodic console output (once per second).
         if frame_count % target_fps == 0:
             fps = clock.get_fps()
             print(
-                f"FPS: {fps:.1f}, Planets: {len(planets)}, Photons: {len(photons)}, Paused: {paused}")
+                f"FPS: {fps:.1f}, Planets: {len(planets)}, Photons: {len(photons)}, Paused: {paused}"
+            )
 
-        # Render (always render, even when paused)
+        # --- Rendering (always executed, even when paused) ---
         if frame_count == 1:
             print("About to render...", flush=True)
             print(f"Drawing {len(planets)} planets and {len(photons)} photons", flush=True)
 
         try:
-            # Draw everything
+            # Draw orbital trails.
             draw_trails(screen, planets, photons, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT)
+            # Draw bodies (planets, photons, central mass).
             draw_bodies(screen, planets, photons, center_body, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT, CENTER_MASS)
+            # Draw selection ring around the selected entity.
             draw_selection_indicator(
                 screen,
                 selected_photon or selected_planet,
@@ -561,16 +622,36 @@ try:
                 HEIGHT,
                 frame_count
             )
-
-            draw_ui(screen, font, small_font, title_font, planets, photons, paused, show_ui,
-                    G_CONSTANT, CENTER_MASS, BLACK_HOLE_THRESHOLD, camera_pos, camera_rot,
-                    zoom_level, WIDTH, HEIGHT, clock.get_fps(), selected_photon or selected_planet,
-                    status_message if status_timer > 0 else None, last_error)
-
+            # Draw UI overlay (status, data, etc.).
+            draw_ui(
+                screen,
+                font,
+                small_font,
+                title_font,
+                planets,
+                photons,
+                paused,
+                show_ui,
+                G_CONSTANT,
+                CENTER_MASS,
+                BLACK_HOLE_THRESHOLD,
+                camera_pos,
+                camera_rot,
+                zoom_level,
+                WIDTH,
+                HEIGHT,
+                clock.get_fps(),
+                selected_photon or selected_planet,
+                status_message if status_timer > 0 else None,
+                last_error
+            )
+            # Present the frame.
             pygame.display.flip()
         except Exception as exc:
             log_runtime_error("render", exc)
-        clock.tick(target_fps)  # Run at stable target FPS
+
+        # Limit the loop to the target frame rate.
+        clock.tick(target_fps)
 
 except Exception as e:
     log_runtime_error("fatal main loop", e)
