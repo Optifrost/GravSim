@@ -9,6 +9,9 @@ on:
     branches: [ main ]
   workflow_dispatch:   # allows manual trigger from the Actions tab
 
+permissions:
+  contents: write
+
 jobs:
   build:
     # Define a matrix so we build for all three major OSes in parallel.
@@ -24,7 +27,7 @@ jobs:
     steps:
       # -----------------------------------------------------------------
       # 1️⃣  Checkout the repository
-      # ----------------------------------------------------------------- 
+      # -----------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
