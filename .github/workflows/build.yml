@@ -99,13 +99,37 @@ jobs:
           name: GravSim-${{ matrix.os }}
           path: dist/${{ steps.set_name.outputs.exe_name }}
 
-      # -----------------------------------------------------------------
-      # 7️⃣  (Optional) Create a GitHub Release and attach the binaries
-      # -----------------------------------------------------------------
-      # This step runs only on pushes to the main branch and after all matrix jobs finish.
-      # It creates a draft release titled with the current date and attaches all three binaries.
-      - name: Create Release (optional)
-        if: github.ref == 'refs/heads/main' && success()
+  # -----------------------------------------------------------------
+  # 7️⃣  Create a GitHub Release and attach the binaries
+  # -----------------------------------------------------------------
+  # This job runs after the build matrix completes and creates a draft release
+  # with the three executables attached.
+  create_release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: GravSim-windows-latest
+          path: ./windows
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: GravSim-macos-latest
+          path: ./macos
+
+      - name: Download Ubuntu artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: GravSim-ubuntu-latest
+          path: ./ubuntu
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.sha }}
@@ -113,8 +137,8 @@ jobs:
           draft: true
           generate_release_notes: true
           files: |
-            dist/GravSim.exe
-            dist/GravSim
-            dist/GravSim
+            windows/GravSim.exe
+            macos/GravSim
+            ubuntu/GravSim
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
