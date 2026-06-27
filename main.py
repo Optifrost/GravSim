@@ -3,10 +3,9 @@
 #
 # This script initializes the simulation environment, handles user input,
 # updates the physics simulation, and renders the visual output.
-# It integrates Pygame for rendering, Pymunk for physics, and PyTorch
-# for optional AI-based orbit prediction.
+# It integrates Pygame for rendering, Pymunk for physics, and optional
+# PyTorch for AI-based orbit prediction.
 
-import torch.optim as optim
 import math
 import random
 import pygame
@@ -15,11 +14,35 @@ import warnings
 import traceback
 import numpy as np
 from pathlib import Path
+
+# Optional PyTorch imports – if torch is not installed, AI features are disabled.
+try:
+    import torch
+    from torch import optim
+    TORCH_AVAILABLE = True
+except Exception:
+    torch = None
+    optim = None
+    TORCH_AVAILABLE = False
+
+# Import optional AI predictor only if torch is available.
+if TORCH_AVAILABLE:
+    from orbit_predictor import OrbitPredictor, prepare_training_data, train_planet_predictor, predict_planet_position
+else:
+    # Placeholders so the rest of the code can reference the names safely.
+    class OrbitPredictor:  # dummy class
+        pass
+    def prepare_training_data(*args, **kwargs):
+        return None, None
+    def train_planet_predictor(*args, **kwargs):
+        return 0.0
+    def predict_planet_position(*args, **kwargs):
+        return None
+
 from config import *
 from entities import *
 from physics import *
 from rendering import *
-import orbit_predictor
 
 # Initialize Pygame and suppress known warnings.
 pygame.init()
@@ -35,6 +58,7 @@ clock = pygame.time.Clock()
 # Target FPS can be overridden by a global TARGET_FPS; otherwise use configured value.
 target_fps = TARGET_FPS if 'TARGET_FPS' in globals() else 120
 print(f"Display initialized: {WIDTH}x{HEIGHT}")
+
 ERROR_LOG_PATH = Path("runtime_errors.log")
 
 # --- Physics setup ---
@@ -47,7 +71,7 @@ center_body = pymunk.Body(body_type=pymunk.Body.STATIC)
 center_body.position = (0, 0)
 space.add(center_body)
 
-# --- AI prediction structures ---
+# --- AI prediction structures (only used if torch is available) ---
 # Dictionaries that map a planet's Pymunk body ID to its predictor model and optimizer.
 predictors = {}          # planet_id -> OrbitPredictor model
 optimizers = {}          # planet_id -> Adam optimizer
@@ -69,7 +93,7 @@ if START_WITH_SAMPLE_PLANETS:
         planet = create_planet(
             space,
             distance,
-            angle=angle,
+            angle,
             color_index=i,
             center_position=center_body.position,
             g_constant=G_CONSTANT,
@@ -135,13 +159,12 @@ def log_runtime_error(context, exc):
     global last_error, error_timer, paused
     last_error = f"{context}: {exc.__class__.__name__}: {exc}"
     error_timer = target_fps * 8
-    paused = True
-    trace = traceback.format_exc()
+    traced = traceback.format_exc()
     print(last_error, flush=True)
-    print(trace, flush=True)
+    print(traced, flush=True)
     with ERROR_LOG_PATH.open("a", encoding="utf-8") as log_file:
         log_file.write(f"\n[{context}] {exc.__class__.__name__}: {exc}\n")
-        log_file.write(trace)
+        log_file.write(traced)
 
 
 def remove_predictor_for_body(body):
@@ -304,8 +327,11 @@ try:
                         remove_planet(planets[-1])
                 elif event.key == pygame.K_g:
                     # Queue AI training (model update) for better performance.
-                    ai_train_counter = 0
-                    set_status("AI training queued.")
+                    if TORCH_AVAILABLE:
+                        ai_train_counter = 0
+                        set_status("AI training queued.")
+                    else:
+                        set_status("AI not available (torch not installed).")
                 elif event.key == pygame.K_EQUALS or event.key == pygame.K_PLUS:
                     # Increase the gravitational constant.
                     G_CONSTANT *= 1.1
@@ -489,20 +515,20 @@ try:
 
                     # --- Optional AI‑based velocity adjustment ---
                     # Blend a predicted position with the simulated one to improve stability.
-                    if frame_count % 60 == 0:  # Run AI logic once per second.
+                    if TORCH_AVAILABLE and frame_count % 60 == 0:  # Run AI logic once per second.
                         for planet_data in planets:
                             if len(planet_data['history']) > AI_MIN_HISTORY_FOR_PREDICTION:
                                 planet_id = id(planet_data['body'])
                                 # Lazily create predictor and optimizer if needed.
                                 if planet_id not in predictors:
-                                    predictors[planet_id] = orbit_predictor.OrbitPredictor(input_size=AI_INPUT_SIZE)
+                                    predictors[planet_id] = OrbitPredictor(input_size=AI_INPUT_SIZE)
                                     optimizers[planet_id] = optim.Adam(
                                         predictors[planet_id].parameters(), lr=AI_LEARNING_RATE
                                     )
 
                                 predicted_pos = None
                                 if planet_id in trained_predictors:
-                                    predicted_pos = orbit_predictor.predict_planet_position(
+                                    predicted_pos = predict_planet_position(
                                         predictors[planet_id],
                                         planet_data['history']
                                     )
@@ -564,24 +590,25 @@ try:
                 update_physics_space(space, PHYSICS_TIME_STEP)
 
                 # --- Periodic AI model training ---
-                ai_train_counter += 1
-                if ai_train_counter >= AI_TRAIN_INTERVAL:
-                    ai_train_counter = 0
-                    for planet_data in planets:
-                        planet_id = id(planet_data['body'])
-                        if planet_id not in predictors:
-                            predictors[planet_id] = orbit_predictor.OrbitPredictor(input_size=AI_INPUT_SIZE)
-                            optimizers[planet_id] = optim.Adam(
-                                predictors[planet_id].parameters(), lr=AI_LEARNING_RATE
-                            )
-                        if len(planet_data['history']) > AI_MIN_HISTORY_FOR_TRAINING:
-                            orbit_predictor.train_planet_predictor(
-                                predictors[planet_id],
-                                optimizers[planet_id],
-                                planet_data['history'],
-                                epochs=AI_EPOCHS_PER_TRAINING
-                            )
-                            trained_predictors.add(planet_id)
+                if TORCH_AVAILABLE:
+                    ai_train_counter += 1
+                    if ai_train_counter >= AI_TRAIN_INTERVAL:
+                        ai_train_counter = 0
+                        for planet_data in planets:
+                            planet_id = id(planet_data['body'])
+                            if planet_id not in predictors:
+                                predictors[planet_id] = OrbitPredictor(input_size=AI_INPUT_SIZE)
+                                optimizers[planet_id] = optim.Adam(
+                                    predictors[planet_id].parameters(), lr=AI_LEARNING_RATE
+                                )
+                            if len(planet_data['history']) > AI_MIN_HISTORY_FOR_TRAINING:
+                                orbit_predictor.train_planet_predictor(
+                                    predictors[planet_id],
+                                    optimizers[planet_id],
+                                    planet_data['history'],
+                                    epochs=AI_EPOCHS_PER_TRAINING
+                                )
+                                trained_predictors.add(planet_id)
             except Exception as exc:
                 log_runtime_error("physics update", exc)
 
