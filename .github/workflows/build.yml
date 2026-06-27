@@ -52,6 +52,7 @@ jobs:
           # pip install torch
           # PyInstaller (the builder)
           pip install pyinstaller
+        shell: bash
 
       # -----------------------------------------------------------------
       # 4️⃣  Build the executable
@@ -72,6 +73,7 @@ jobs:
             --add-data "sun_texture.png${SEP}." \
             --add-data "config.py${SEP}." \
             main.py
+        shell: bash
 
       # -----------------------------------------------------------------
       # 5️⃣  Prepare artifact name (OS‑specific)
@@ -87,6 +89,7 @@ jobs:
             EXE_NAME="GravSim"
           fi
           echo "exe_name=$EXE_NAME" >> $GITHUB_OUTPUT
+        shell: bash
 
       # -----------------------------------------------------------------
       # 6️⃣  Upload the built binary as a workflow artifact
