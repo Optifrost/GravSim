@@ -1,0 +1,115 @@
+name: Build Executables
+
+# Run on every push to any branch and on pull_request events.
+# You can also trigger it manually via workflow_dispatch.
+on:
+  push:
+    branches: [ main ]   # adjust if your default branch differs
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:   # allows manual trigger from the Actions tab
+
+jobs:
+  build:
+    # Define a matrix so we build for all three major OSes in parallel.
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        # You can add more Python versions here if you want to test compatibility.
+        # For simplicity we stick with 3.11.
+        python-version: ["3.11"]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      # -----------------------------------------------------------------
+      # 1️⃣  Checkout the repository
+      # ----------------------------------------------------------------- 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------
+      # 2️⃣  Set up Python
+      # -----------------------------------------------------------------
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      # -----------------------------------------------------------------
+      # 3️⃣  Install dependencies
+      # -----------------------------------------------------------------
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Core runtime libraries
+          pip install pygame pymunk
+          # Uncomment the next line if you want the AI orbit‑predictor (torch) included.
+          # pip install torch
+          # PyInstaller (the builder)
+          pip install pyinstaller
+
+      # -----------------------------------------------------------------
+      # 4️⃣  Build the executable
+      # -----------------------------------------------------------------
+      - name: Build executable with PyInstaller
+        # The --add-data syntax differs between Windows and *nix.
+        # We'll use a small shell snippet to handle both.
+        run: |
+          # Determine the correct separator for --add-data
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            SEP=";"
+          else
+            SEP=":"
+          fi
+
+          pyinstaller --onefile --windowed \
+            --name "GravSim" \
+            --add-data "sun_texture.png${SEP}." \
+            --add-data "config.py${SEP}." \
+            main.py
+
+      # -----------------------------------------------------------------
+      # 5️⃣  Prepare artifact name (OS‑specific)
+      # -----------------------------------------------------------------
+      - name: Set artifact name
+        id: set_name
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            EXE_NAME="GravSim.exe"
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            EXE_NAME="GravSim"
+          else
+            EXE_NAME="GravSim"
+          fi
+          echo "exe_name=$EXE_NAME" >> $GITHUB_OUTPUT
+
+      # -----------------------------------------------------------------
+      # 6️⃣  Upload the built binary as a workflow artifact
+      # -----------------------------------------------------------------
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GravSim-${{ matrix.os }}
+          path: dist/${{ steps.set_name.outputs.exe_name }}
+
+      # -----------------------------------------------------------------
+      # 7️⃣  (Optional) Create a GitHub Release and attach the binaries
+      # -----------------------------------------------------------------
+      # This step runs only on pushes to the main branch and after all matrix jobs finish.
+      # It creates a draft release titled with the current date and attaches all three binaries.
+      - name: Create Release (optional)
+        if: github.ref == 'refs/heads/main' && success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.sha }}
+          name: "Build ${{ github.sha }} (${{ github.ref_name }})"
+          draft: true
+          generate_release_notes: true
+          files: |
+            dist/GravSim.exe
+            dist/GravSim
+            dist/GravSim
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
