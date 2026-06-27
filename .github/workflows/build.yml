@@ -48,7 +48,6 @@ jobs:
           python -m pip install --upgrade pip
           # Core runtime libraries
           pip install pygame pymunk
-          pip install torch
           # PyInstaller (the builder)
           pip install pyinstaller
         shell: bash
