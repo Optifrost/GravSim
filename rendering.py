@@ -375,6 +375,7 @@ def draw_ui(screen, font, small_font, title_font, planets, photons, paused, show
         "Space pause   C clear   Home reset view   H hide UI",
         "Arrows rotate   WASD pan   Mouse wheel zoom",
         "+/- gravity   M/N mass   R/F size   B black hole",
+        "U unselect   Clear selection",
     ]
     for line in controls:
         text = small_font.render(line, True, (210, 215, 235))
