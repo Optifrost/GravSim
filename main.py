@@ -30,11 +30,11 @@ if TORCH_AVAILABLE:
     from orbit_predictor import OrbitPredictor, prepare_training_data, train_planet_predictor, predict_planet_position
 else:
     # Placeholders so the rest of the code can reference the names safely.
-    class OrbitPredictor:  # dummy class
+    class OrbitPass:  # dummy class
         pass
     def prepare_training_data(*args, **kwargs):
         return None, None
-    def train_planet_predictor(*args, **kwargs):
+    , *args, **kwargs):
         return 0.0
     def predict_planet_position(*args, **kwargs):
         return None
@@ -138,10 +138,17 @@ ui_hidden_timer = 0            # Timer used to auto‑hide the UI after inactivi
 AUTO_HIDE_DELAY = 300          # Frames (5 seconds at 60 FPS) before auto‑hiding UI.
 selected_planet = None         # Currently selected planet (for mass/radius edits).
 selected_photon = None         # Currently selected photon (for deletion).
+selected_entity = None         # Currently selected entity (planet or photon) for camera follow.
 status_message = "Click empty space to add a planet. Right-click to add a photon."
 status_timer = target_fps * 5  # How long to show a status message (in frames).
 last_error = None              # Stores the last exception for on‑screen display.
 error_timer = 0                # Timer for clearing the last error display.
+
+# Sidebar constants for entity list UI.
+UI_SIDEBAR_WIDTH = 200
+SIDEBAR_PADDING = 10
+ENTRY_HEIGHT = 20
+HEADER_HEIGHT = 24
 
 # ----- Helper functions -----
 def set_status(message, frames=None):
@@ -185,36 +192,39 @@ def safe_space_remove(entity):
 
 def remove_planet(planet):
     """Remove a planet from the simulation and clean up its AI resources."""
-    global selected_planet
+    global selected_planet, selected_photon, selected_entity
     if planet in planets:
         remove_predictor_for_body(planet['body'])
         safe_space_remove(planet)
         planets.remove(planet)
         if selected_planet is planet:
             selected_planet = None
+            selected_entity = None
         set_status("Planet removed.")
 
 
 def remove_photon(photon):
     """Remove a photon from the simulation."""
-    global selected_photon
+    global selected_photon, selected_entity
     if photon in photons:
         safe_space_remove(photon)
         photons.remove(photon)
         if selected_photon is photon:
             selected_photon = None
+            selected_entity = None
         set_status("Photon removed.")
 
 
 def clear_scene():
     """Remove all planets and photons, and reset AI tracking structures."""
-    global selected_planet, selected_photon
+    global selected_planet, selected_photon, selected_entity, predictors, optimizers, trained_predictors
     for planet in list(planets):
         remove_planet(planet)
     for photon in list(photons):
         remove_photon(photon)
     selected_planet = None
     selected_photon = None
+    selected_entity = None
     predictors.clear()
     optimizers.clear()
     trained_predictors.clear()
@@ -223,6 +233,7 @@ def clear_scene():
 
 def reset_view():
     """Reset camera position and rotation to their initial values."""
+    global camera_pos, camera_rot
     camera_pos[:] = INITIAL_CAMERA_POS.copy()
     camera_rot[:] = INITIAL_CAMERA_ROT.copy()
     set_status("Camera reset.")
@@ -306,6 +317,13 @@ try:
         # Clear the screen with a dark space‑like background.
         screen.fill((5, 5, 15))  # Very dark space background
 
+        # Build list of entities for UI sidebar and click detection.
+        entities_for_ui = []
+        for p in planets:
+            entities_for_ui.append((p, p['name']))
+        for i, ph in enumerate(photons):
+            entities_for_ui.append((ph, f"Photon {i}"))
+
         # Event handling.
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -376,7 +394,7 @@ try:
                 elif event.key == pygame.K_n:
                     # Decrease mass of the selected planet.
                     if selected_planet is not None and selected_planet['mass'] > 1:
-                        update_planet_mass(selected_planet, 1/1.2)
+                        update_planet_mass(selected_planet, 1.2)
                         set_status(f"{selected_planet['name']} mass: {selected_planet['mass']:.1f}")
                 elif event.key == pygame.K_r:
                     # Increase visual radius of the selected planet (visual only).
@@ -402,30 +420,51 @@ try:
                 elif event.button == 5:  # Mouse wheel down → zoom out.
                     zoom_level = max(min_zoom, zoom_level / 1.1)
                 elif event.button == 1:  # Left click: add planet or select existing.
-                    world_pos = screen_to_world(
-                        (event.pos[0], event.pos[1]), camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT
-                    )  # Assume z = 0 for clicking.
-
-                    # Check if click hit a photon first (higher priority for selection).
-                    clicked_photon = select_entity_at_position(
-                        photons, event.pos, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT, CLICK_DISTANCE_THRESHOLD
-                    )
-                    if clicked_photon:
-                        selected_photon = clicked_photon
-                        selected_planet = None
-                        set_status("Photon selected. Press Delete to remove it.")
+                    # Check if click is in the entity sidebar.
+                    if event.pos[0] > WIDTH - UI_SIDEBAR_WIDTH:
+                        # Click inside sidebar – select entity from list.
+                        y = event.pos[1]
+                        index = (y - SIDEBAR_PADDING - HEADER_HEIGHT) // ENTRY_HEIGHT
+                        if 0 <= index < len(entities_for_ui):
+                            obj, label = entities_for_ui[index]
+                            # Set selection based on object type.
+                            if obj in planets:
+                                selected_planet = obj
+                                selected_photon = None
+                            else:
+                                selected_photon = obj
+                                selected_planet = None
+                            selected_entity = obj
+                            set_status(f"Selected: {label}")
+                        # If click outside entries, ignore.
                     else:
-                        # Otherwise check for a planet.
-                        clicked_planet = select_entity_at_position(
-                            planets, event.pos, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT, CLICK_DISTANCE_THRESHOLD
+                        # Click outside sidebar – use existing selection logic.
+                        world_pos = screen_to_world(
+                            (event.pos[0], event.pos[1]), camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT
+                        )  # Assume z = 0 for clicking.
+
+                        # Check if click hit a photon first (higher priority for selection).
+                        clicked_photon = select_entity_at_position(
+                            photons, event.pos, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT, CLICK_DISTANCE_THRESHOLD
                         )
-                        if clicked_planet:
-                            selected_planet = clicked_planet
-                            selected_photon = None
-                            set_status(f"{selected_planet['name']} selected.")
+                        if clicked_photon:
+                            selected_photon = clicked_photon
+                            selected_planet = None
+                            selected_entity = clicked_photon
+                            set_status("Photon selected. Press Delete to remove it.")
                         else:
-                            # No entity clicked → create a new planet at the cursor location.
-                            add_planet_at_world(world_pos)
+                            # Otherwise check for a planet.
+                            clicked_planet = select_entity_at_position(
+                                planets, event.pos, camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT, CLICK_DISTANCE_THRESHOLD
+                            )
+                            if clicked_planet:
+                                selected_planet = clicked_planet
+                                selected_photon = None
+                                selected_entity = clicked_planet
+                                set_status(f"{selected_planet['name']} selected.")
+                            else:
+                                # No entity clicked → create a new planet at the cursor location.
+                                add_planet_at_world(world_pos)
                 elif event.button == 3:  # Right click: add photon at cursor.
                     world_pos = screen_to_world(
                         (event.pos[0], event.pos[1]), camera_pos, camera_rot, zoom_level, WIDTH, HEIGHT
@@ -612,6 +651,15 @@ try:
             except Exception as exc:
                 log_runtime_error("physics update", exc)
 
+        # --- Camera follow selected entity ---
+        if selected_entity is not None:
+            target_x = selected_entity['body'].position.x
+            target_y = selected_entity['body'].position.y
+            # Smooth follow factor (0.1 = 10% of distance per frame).
+            camera_pos[0] += (target_x - camera_pos[0]) * 0.1
+            camera_pos[1] += (target_y - camera_pos[1]) * 0.1
+            # Keep Z coordinate unchanged (could also follow Z if needed).
+
         # Frame‑counters and status timers.
         frame_count += 1
         if status_timer > 0:
@@ -672,6 +720,29 @@ try:
                 status_message if status_timer > 0 else None,
                 last_error
             )
+            # --- Draw entity sidebar ---
+            # Semi‑transparent background for sidebar.
+            sidebar_surf = pygame.Surface((UI_SIDEBAR_WIDTH, HEIGHT), pygame.SRCALPHA)
+            sidebar_surf.fill((0, 0, 0, 180))  # RGBA: black with 70% opacity.
+            screen.blit(sidebar_surf, (WIDTH - UI_SIDEBAR_WIDTH, 0))
+            # Sidebar title.
+            title_surf = font.render("Entities", True, (255, 255, 255))
+            screen.blit(title_surf, (WIDTH - UI_SIDEBAR_WIDTH + SIDEBAR_PADDING, SIDEBAR_PADDING))
+            # List entries.
+            for i, (obj, label) in enumerate(entities_for_ui):
+                y = SIDEBAR_PADDING + HEADER_HEIGHT + i * ENTRY_HEIGHT
+                # Highlight selected entry.
+                if obj == selected_entity:
+                    highlight_rect = pygame.Rect(
+                        WIDTH - UI_SIDEBAR_WIDTH + SIDEBAR_PADDING,
+                        y,
+                        UI_SIDEBAR_WIDTH - 2 * SIDEBAR_PADDING,
+                        ENTRY_HEIGHT - 2
+                    )
+                    pygame.draw.rect(screen, (70, 70, 180), highlight_rect)
+                # Render text.
+                text_surf = small_font.render(label, True, (255, 255, 255))
+                screen.blit(text_surf, (WIDTH - UI_SIDEBAR_WIDTH + SIDEBAR_PADDING + 4, y + 2))
             # Present the frame.
             pygame.display.flip()
         except Exception as exc:
