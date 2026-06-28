@@ -414,6 +414,12 @@ try:
                     # Zoom out.
                     zoom_level = max(min_zoom, zoom_level / 1.1)
                     set_status(f"Zoom: {zoom_level:.2f}x")
+                elif event.key == pygame.K_u:
+                    # Unselect current entity.
+                    selected_planet = None
+                    selected_photon = None
+                    selected_entity = None
+                    set_status("Selection cleared.")
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 4:  # Mouse wheel up → zoom in.
                     zoom_level = min(max_zoom, zoom_level * 1.1)
@@ -436,7 +442,12 @@ try:
                                 selected_planet = None
                             selected_entity = obj
                             set_status(f"Selected: {label}")
-                        # If click outside entries, ignore.
+                        else:
+                            # Click inside sidebar but outside entries → clear selection.
+                            selected_planet = None
+                            selected_photon = None
+                            selected_entity = None
+                            set_status("Selection cleared.")
                     else:
                         # Click outside sidebar – use existing selection logic.
                         world_pos = screen_to_world(
