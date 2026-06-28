@@ -2,13 +2,25 @@
 
 GravSim is an interactive orbital physics sandbox built with Pygame and Pymunk. It is essentially a 3D sandbox to mess around with. AI was used heavily to write code and occasionally troubleshoot, but a lot of bugs were fixed manually.
 
+## Download pre-built binaries (v1.1.0)
+
+You can download ready‑to‑run executables for Windows, macOS and Linux from the GitHub release:
+
+[**GravSim v1.1.0**](https://github.com/Optifrost/GravSim/releases/tag/v1.1.0)
+
+The release contains:
+- `GravSim.exe` (Windows)
+- `GravSim` (macOS)
+- `GravSim` (Linux)
+
+Just unzip/download the appropriate file for your platform and run it—no installation required.
+
 ## Quick Start (very simple)
 
 1. **Make sure you have Python 3.7+ installed**  
    Download from https://www.python.org/downloads/
 
-2. **Open a terminal (Command Prompt / PowerShell / Bash)**  
-   Navigate to where you want to put the project.
+2. **Open a terminal (Command Prompt / PowerShell / Bash)**
 
 3. **Download the project**  
    ```powershell
